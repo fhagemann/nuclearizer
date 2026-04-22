@@ -123,10 +123,9 @@ jobs:
           # (not a -newer filter) so nothing is missed regardless of timestamps.
           # Without this, make sees freshly checked-out src/*.cxx as newer than
           # the restored .d files and regenerates all dependencies from scratch.
-          find "${{ github.workspace }}/.nuclearizer-cache/lib" -maxdepth 1 -type f \
-            while read -r f; do
-              touch "${{ github.workspace }}/megalib/lib/$(basename "$f")" 2>/dev/null || true
-            done
+          find "${{ github.workspace }}/.nuclearizer-cache/lib" -maxdepth 1 -type f -print0 | while read -r -d '' f; do
+            touch "${{ github.workspace }}/megalib/lib/$(basename "$f")" 2>/dev/null || true
+          done
           touch "${{ github.workspace }}/megalib/bin/nuclearizer" 2>/dev/null || true
 
           # Partial hit: some sources changed since the cache was built.
