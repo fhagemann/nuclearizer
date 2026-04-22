@@ -116,18 +116,21 @@ jobs:
         if: steps.cache-nuclearizer.outputs.cache-hit == 'true'
         run: |
           set -euo pipefail
-          CACHE="$NUCLEARIZER_CACHE_DIR"
-          LB="$MEGALIB/lib"
-          BN="$MEGALIB/bin"
-
-          if [ -d "$CACHE/lib" ]; then
-            cp -a "$CACHE/lib/." "$LB/"
-            echo "Restored $(ls "$CACHE/lib" | wc -l) files into $LB"
-          fi
-          if [ -d "$CACHE/bin" ]; then
-            cp -a "$CACHE/bin/." "$BN/"
-            echo "Restored $(ls "$CACHE/bin" | wc -l) files into $BN"
-          fi
+          cp -a "$NUCLEARIZER_CACHE_DIR/lib/." "$MEGALIB/lib/"
+          cp -a "$NUCLEARIZER_CACHE_DIR/bin/." "$MEGALIB/bin/"
+          
+          # Touch all restored files so make sees them as newer than the
+          # just-checked-out sources — without this, make regenerates every
+          # .d file because git checkout stamps sources with the current time
+          find "$MEGALIB/lib" -maxdepth 1 \( \
+            -name 'MModule*.o' -o -name 'MModule*.d' \
+            -o -name 'MFretalon*.o' -o -name 'MFretalon*.d' \
+            -o -name 'libNuclearizer.*' \
+            -o -name 'Nuclearizer_Dictionary*' \
+          \) -exec touch {} \;
+          touch "$MEGALIB/bin/nuclearizer"
+          
+          echo "Restored and touched $(ls "$NUCLEARIZER_CACHE_DIR/lib" | wc -l) files"
 
       - name: Configure build environment
         shell: micromamba-shell {0}
