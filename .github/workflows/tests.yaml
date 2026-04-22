@@ -118,19 +118,15 @@ jobs:
           set -euo pipefail
           cp -a "$NUCLEARIZER_CACHE_DIR/lib/." "$MEGALIB/lib/"
           cp -a "$NUCLEARIZER_CACHE_DIR/bin/." "$MEGALIB/bin/"
-          
-          # Touch all restored files so make sees them as newer than the
-          # just-checked-out sources — without this, make regenerates every
-          # .d file because git checkout stamps sources with the current time
-          find "$MEGALIB/lib" -maxdepth 1 \( \
-            -name 'MModule*.o' -o -name 'MModule*.d' \
-            -o -name 'MFretalon*.o' -o -name 'MFretalon*.d' \
-            -o -name 'libNuclearizer.*' \
-            -o -name 'Nuclearizer_Dictionary*' \
+
+          # Touch everything we restored so make sees them as newer than
+          # the freshly-checked-out source files
+          find "$MEGALIB/lib" -maxdepth 1 \( -name '*.o' -o -name '*.d' \
+            -o -name 'libNuclearizer.*' -o -name 'Nuclearizer_Dictionary*' \
           \) -exec touch {} \;
-          touch "$MEGALIB/bin/nuclearizer"
-          
-          echo "Restored and touched $(ls "$NUCLEARIZER_CACHE_DIR/lib" | wc -l) files"
+          touch "$MEGALIB/bin/nuclearizer" 2>/dev/null || true
+
+          echo "Restored $(ls "$NUCLEARIZER_CACHE_DIR/lib" | wc -l) files"
 
       - name: Configure build environment
         shell: micromamba-shell {0}
@@ -164,26 +160,24 @@ jobs:
 
           mkdir -p "$CACHE/lib" "$CACHE/bin"
 
-          # Nuclearizer object + dependency files
+          # Capture ALL .o, .d, and related files that nuclearizer's make wrote
+          # into megalib/lib — identified by type, not by filename prefix.
+          # This is robust regardless of how many or what files nuclearizer adds.
           find "$LB" -maxdepth 1 \( \
-            -name 'MModule*.o'  -o -name 'MModule*.d'  \
-            -o -name 'MFretalon*.o' -o -name 'MFretalon*.d' \
-          \) -exec cp -a {} "$CACHE/lib/" \;
+            -name '*.o' -o -name '*.d' \
+          \) -newer "$MEGALIB/config/Makefile.config" \
+            -exec cp -a {} "$CACHE/lib/" \;
 
-          # Shared library, rootmap, rdict PCM
+          # Shared lib, rootmap, rdict PCM, dictionary files
           find "$LB" -maxdepth 1 \( \
             -name 'libNuclearizer.*' \
-          \) -exec cp -a {} "$CACHE/lib/" \;
-
-          # ROOT dictionary source, compiled object, LinkDef header
-          find "$LB" -maxdepth 1 \( \
-            -name 'Nuclearizer_Dictionary*' \
+            -o -name 'Nuclearizer_Dictionary*' \
           \) -exec cp -a {} "$CACHE/lib/" \;
 
           # The binary
           [ -f "$BN/nuclearizer" ] && cp -a "$BN/nuclearizer" "$CACHE/bin/"
 
-          echo "Staged nuclearizer cache contents:"
+          echo "Staged $(find "$CACHE" -type f | wc -l) files into nuclearizer cache:"
           find "$CACHE" -type f | sort
 
       - name: Test Nuclearizer
