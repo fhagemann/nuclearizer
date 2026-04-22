@@ -110,8 +110,6 @@ jobs:
           key: nuclearizer-${{ runner.os }}-${{ hashFiles('src/**', 'include/**', 'apps/**', 'Makefile') }}
           restore-keys: nuclearizer-${{ runner.os }}-
 
-      # If we got a nuclearizer cache hit, copy the staged files back into the
-      # MEGAlib tree so that make sees up-to-date outputs and skips unchanged files.
       - name: Restore Nuclearizer outputs into MEGAlib tree
         if: steps.cache-nuclearizer.outputs.cache-hit == 'true'
         run: |
@@ -119,14 +117,45 @@ jobs:
           cp -a "$NUCLEARIZER_CACHE_DIR/lib/." "$MEGALIB/lib/"
           cp -a "$NUCLEARIZER_CACHE_DIR/bin/." "$MEGALIB/bin/"
 
-          # Touch everything we restored so make sees them as newer than
-          # the freshly-checked-out source files
-          find "$MEGALIB/lib" -maxdepth 1 \( -name '*.o' -o -name '*.d' \
-            -o -name 'libNuclearizer.*' -o -name 'Nuclearizer_Dictionary*' \
-          \) -exec touch {} \;
-          touch "$MEGALIB/bin/nuclearizer" 2>/dev/null || true
-
-          echo "Restored $(ls "$NUCLEARIZER_CACHE_DIR/lib" | wc -l) files"
+          # Get list of changed source files (only cxx/h files we care about)
+          CHANGED_SOURCES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'src/*.cxx' 'include/*.h' 'apps/**' 'Makefile' 2>/dev/null || echo "")
+          
+          if [ -z "$CHANGED_SOURCES" ]; then
+            echo "No source changes detected — all cached artifacts are valid"
+            exit 0
+          fi
+          
+          echo "Changed files:"
+          echo "$CHANGED_SOURCES"
+          
+          # For each changed source file, delete its corresponding .o and .d files
+          # so Make will rebuild them
+          while IFS= read -r file; do
+            if [[ "$file" == src/*.cxx ]]; then
+              basename="${file##*/}"
+              objfile="${MEGALIB}/lib/${basename%.cxx}.o"
+              depfile="${MEGALIB}/lib/${basename%.cxx}.d"
+              echo "Removing cached artifacts for $file"
+              rm -f "$objfile" "$depfile"
+            elif [[ "$file" == include/*.h ]]; then
+              # Header changed — remove all .o/.d files that depend on it
+              basename="${file##*/}"
+              basename="${basename%.h}"
+              objfile="${MEGALIB}/lib/${basename}.o"
+              depfile="${MEGALIB}/lib/${basename}.d"
+              echo "Removing cached artifacts for $file"
+              rm -f "$objfile" "$depfile"
+            elif [[ "$file" == "Makefile" || "$file" == apps/* ]]; then
+              # Full rebuild needed
+              echo "Makefile or apps changed — clearing all nuclearizer artifacts"
+              rm -f "$MEGALIB/lib"/{MModule,MFretalon,Nuclearizer_Dictionary}*.{o,d}
+              rm -f "$MEGALIB/lib"/libNuclearizer.*
+              rm -f "$MEGALIB/bin"/nuclearizer
+              break
+            fi
+          done <<< "$CHANGED_SOURCES"
+          
+          echo "Cleaned up stale artifacts for changed files"
 
       - name: Configure build environment
         shell: micromamba-shell {0}
