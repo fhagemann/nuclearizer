@@ -1,0 +1,232 @@
+name: Nuclearizer Tests for develop/em
+on:
+  push:
+    branches:
+      - develop/em
+    tags: '*'
+  pull_request:
+    branches:
+      - develop/em
+  release:
+
+jobs:
+  build:
+    name: Ubuntu
+    runs-on: ubuntu-latest
+    env:
+      MEGALIB: ${{ github.workspace }}/megalib
+      NUCLEARIZER: ${{ github.workspace }}
+
+      # ccache settings
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: true
+      CCACHE_COMPILERCHECK: content
+      CCACHE_NOHASHDIR: true
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 2G
+      NUCLEARIZER_CACHE_DIR: ${{ github.workspace }}/.nuclearizer-cache
+
+    steps:
+      - name: Setup Conda Environment
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: cosi-env
+          channels: conda-forge
+          create-args: >-
+            root=6.32 geant4=11.2 healpix_cxx
+            pkg-config make cmake cxx-compiler ccache
+            ccfits=2.6 cfitsio=4.3 hdf5=1.14
+          cache-environment: true
+
+      - name: Write pkg-config files & sanity-check
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+
+          echo -e "prefix=$CONDA_PREFIX\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: hdf5\nDescription: HDF5\nVersion: 1.14\nLibs: -L\${libdir} -lhdf5 -lhdf5_cpp\nCflags: -I\${includedir}" > "$CONDA_PREFIX/lib/pkgconfig/hdf5.pc"
+          echo -e "prefix=$CONDA_PREFIX\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: CCfits\nDescription: CCfits\nVersion: 2.6\nLibs: -L\${libdir} -lCCfits\nCflags: -I\${includedir}" > "$CONDA_PREFIX/lib/pkgconfig/CCfits.pc"
+
+          export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+          pkg-config --print-errors --exists hdf5
+          pkg-config --print-errors --exists CCfits
+
+      - name: Checkout Nuclearizer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for git diff on partial cache hits
+
+      - name: Checkout MEGAlib
+        uses: actions/checkout@v4
+        with:
+          repository: zoglauer/megalib
+          ref: develop-cosi
+          path: megalib
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          create-symlink: true
+          key: ${{ runner.os }}-ccache-v1
+          restore-keys: ${{ runner.os }}-ccache-
+          max-size: 2G
+
+      # ── MEGAlib cache (stable, ~200 MB) ─────────────────────────────────────
+      - name: Cache MEGAlib build
+        id: cache-megalib
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/megalib/lib
+            ${{ github.workspace }}/megalib/bin
+            ${{ github.workspace }}/megalib/include
+            ${{ github.workspace }}/megalib/config
+          key: megalib-${{ runner.os }}-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
+          restore-keys: megalib-${{ runner.os }}-
+
+      - name: Build MEGAlib
+        if: steps.cache-megalib.outputs.cache-hit != 'true'
+        shell: micromamba-shell {0}
+        run: |
+          cd "$MEGALIB"
+          ./configure
+          make -j"$(nproc)"
+
+      # ── Nuclearizer overlay cache (changes often, ~few MB) ───────────────────
+      #
+      # All nuclearizer outputs land inside $MEGALIB/lib and $MEGALIB/bin, which
+      # are already covered by the MEGAlib cache above. We stage only the
+      # nuclearizer-specific files (identified via -newer $NUCLEARIZER/Makefile)
+      # into .nuclearizer-cache/ under a separate key.
+      #
+      # Three scenarios:
+      #   Exact hit   – sources unchanged: restore + touch, make does nothing
+      #   Partial hit – sources changed:   restore + touch + delete stale .o/.d,
+      #                                    make rebuilds only changed files
+      #   Cold cache  – first run:         skip restore, full build, save cache
+      #
+      - name: Restore Nuclearizer cache
+        id: cache-nuclearizer
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.nuclearizer-cache
+          key: nuclearizer-${{ runner.os }}-${{ hashFiles('src/**', 'include/**', 'apps/**', 'Makefile') }}
+          restore-keys: nuclearizer-${{ runner.os }}-
+
+      - name: Restore Nuclearizer outputs into MEGAlib tree
+        if: steps.cache-nuclearizer.outputs.cache-matched-key != ''
+        run: |
+          set -euo pipefail
+          cp -a "$NUCLEARIZER_CACHE_DIR/lib/." "$MEGALIB/lib/"
+          cp -a "$NUCLEARIZER_CACHE_DIR/bin/." "$MEGALIB/bin/"
+
+          # Touch every file we just copied, driven by the cache dir contents
+          # (not a -newer filter) so nothing is missed regardless of timestamps.
+          # Without this, make sees freshly checked-out src/*.cxx as newer than
+          # the restored .d files and regenerates all dependencies from scratch.
+          find "${{ github.workspace }}/.nuclearizer-cache/lib" -maxdepth 1 -type f -print0 | while read -r -d '' f; do
+            touch "${{ github.workspace }}/megalib/lib/$(basename "$f")" 2>/dev/null || true
+          done
+          touch "${{ github.workspace }}/megalib/bin/nuclearizer" 2>/dev/null || true
+
+          # Partial hit: some sources changed since the cache was built.
+          # Delete the .o/.d for changed files so make rebuilds only those.
+          if [ "${{ steps.cache-nuclearizer.outputs.cache-hit }}" != "true" ]; then
+            echo "Partial cache hit — removing stale artifacts for changed files"
+
+            # github.event.before is only set on push; use PR base SHA as fallback
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ]; then
+              BEFORE="${{ github.event.pull_request.base.sha }}"
+            fi
+
+            CHANGED=$(git diff --name-only \
+              "$BEFORE" "${{ github.sha }}" \
+              -- 'src/*.cxx' 'include/*.h' 'apps/**' 'Makefile' 2>/dev/null || true)
+
+            if [ -z "$CHANGED" ]; then
+              echo "Could not determine changed files — keeping all cached artifacts"
+            else
+              echo "Changed files:"
+              echo "$CHANGED"
+              while IFS= read -r file; do
+                base="${file##*/}"
+                stem="${base%.*}"
+                echo "  Invalidating: $stem.o $stem.d"
+                rm -f "$MEGALIB/lib/$stem.o" "$MEGALIB/lib/$stem.d"
+              done <<< "$CHANGED"
+
+              # Force relink of shared lib and binary
+              rm -f "$MEGALIB/lib"/libNuclearizer.*
+              rm -f "$MEGALIB/bin/nuclearizer"
+            fi
+          else
+            echo "Exact cache hit — all artifacts are valid"
+          fi
+
+      - name: Configure build environment
+        shell: micromamba-shell {0}
+        run: |
+          mkdir -p "$CONDA_PREFIX/lib/pkgconfig"
+          export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export LD_LIBRARY_PATH="$MEGALIB/lib:$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+          export CXX="ccache g++"
+          export CC="ccache gcc"
+
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$CONDA_PREFIX/lib -Wl,-rpath,$CONDA_PREFIX/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
+          echo "CXX=$CXX" >> "$GITHUB_ENV"
+          echo "CC=$CC" >> "$GITHUB_ENV"
+
+          ccache --zero-stats || true
+
+      - name: Build Nuclearizer
+        shell: micromamba-shell {0}
+        run: |
+          # Sentinel created inside the same shell as make, guaranteed same env
+          touch "${{ github.workspace }}/.build-start"
+          cd "${{ github.workspace }}"
+          make -j"$(nproc)"
+
+      - name: Stage Nuclearizer outputs for caching
+        run: |
+          set -euo pipefail
+          # Use github.workspace directly — no env var expansion needed
+          CACHE="${{ github.workspace }}/.nuclearizer-cache"
+          LB="${{ github.workspace }}/megalib/lib"
+          BN="${{ github.workspace }}/megalib/bin"
+          SENTINEL="${{ github.workspace }}/.build-start"
+          mkdir -p "$CACHE/lib" "$CACHE/bin"
+
+          find "$LB" -maxdepth 1 \( -name '*.o' -o -name '*.d' \) \
+            -newer "$SENTINEL" \
+            -exec cp -a {} "$CACHE/lib/" \;
+          find "$LB" -maxdepth 1 \( \
+            -name 'libNuclearizer.*' -o -name 'Nuclearizer_Dictionary*' \
+          \) -exec cp -a {} "$CACHE/lib/" \;
+          [ -f "$BN/nuclearizer" ] && cp -a "$BN/nuclearizer" "$CACHE/bin/"
+
+          echo "Staged $(find "$CACHE" -type f | wc -l) files into nuclearizer cache:"
+          find "$CACHE" -type f | sort
+
+      # Save only when the key is new — an exact hit means the cache already
+      # contains the current build and re-saving would be redundant.
+      - name: Save Nuclearizer cache
+        if: steps.cache-nuclearizer.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.nuclearizer-cache
+          key: nuclearizer-${{ runner.os }}-${{ hashFiles('src/**', 'include/**', 'apps/**', 'Makefile') }}
+
+      - name: Test Nuclearizer
+        shell: micromamba-shell {0}
+        run: |
+          cd "$NUCLEARIZER"
+          make test -j"$(nproc)"
+
+      - name: Upload Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-logs
+          path: ${{ github.workspace }}/*.log
