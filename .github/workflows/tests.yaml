@@ -21,6 +21,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_COMPRESS: true
       CCACHE_COMPILERCHECK: content
+      CCACHE_NOHASHDIR: true
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_MAXSIZE: 2G
       NUCLEARIZER_CACHE_DIR: ${{ github.workspace }}/.nuclearizer-cache
@@ -63,9 +64,9 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           create-symlink: true
-          key: ${{ runner.os }}-ccache-${{ hashFiles('src/**', 'include/**') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-
+          key: ${{ runner.os }}-ccache-v1          # stable — never thrown away
+          restore-keys: ${{ runner.os }}-ccache-   # always restores the latest
+          max-size: 2G
 
       - name: Cache MEGAlib build
         id: cache-megalib
