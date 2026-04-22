@@ -67,16 +67,22 @@ jobs:
           ref: develop-cosi
           path: megalib
 
-      - name: Cache MEGAlib build outputs
-        id: cache-megalib
-        uses: actions/cache@v4
+      - name: Cache build outputs
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          path: |
-            ${{ github.workspace }}/megalib/lib
-            ${{ github.workspace }}/megalib/bin
-            ${{ github.workspace }}/megalib/include
-            ${{ github.workspace }}/megalib/config
+          create-symlink: true
           key: ${{ runner.os }}-megalib-develop-cosi-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
+
+      # - name: Cache MEGAlib build outputs
+      #   id: cache-megalib
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ${{ github.workspace }}/megalib/lib
+      #       ${{ github.workspace }}/megalib/bin
+      #       ${{ github.workspace }}/megalib/include
+      #       ${{ github.workspace }}/megalib/config
+      #     key: ${{ runner.os }}-megalib-develop-cosi-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
 
       - name: Build MEGAlib
         if: steps.cache-megalib.outputs.cache-hit != 'true'
@@ -86,13 +92,13 @@ jobs:
           ./configure
           make -j"$(nproc)"
 
-      - name: Cache Nuclearizer
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-ccache-nuclearizer-v1-${{ hashFiles('src/**', 'include/**', 'Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-nuclearizer-v1-
+      # - name: Cache Nuclearizer
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ${{ github.workspace }}/.ccache
+      #     key: ${{ runner.os }}-ccache-nuclearizer-v1-${{ hashFiles('src/**', 'include/**', 'Makefile') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-ccache-nuclearizer-v1-
 
       - name: Configure build environment
         shell: micromamba-shell {0}
