@@ -13,6 +13,8 @@ jobs:
   build:
     name: Ubuntu
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       MEGALIB: ${{ github.workspace }}/megalib
       NUCLEARIZER: ${{ github.workspace }}
