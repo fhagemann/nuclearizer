@@ -10,8 +10,65 @@ on:
   release:
 
 jobs:
+  # ── Prepare job ─────────────────────────────────────────────────────────────
+  #
+  # Detects which Nuclearizer source files changed in this push/PR so that the
+  # build job can perform a surgical partial rebuild instead of recompiling
+  # everything.  Runs once and passes results to all downstream jobs via outputs.
+  #
+  prepare:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      any-changed: ${{ steps.changed.outputs.any }}
+      changed-files: ${{ steps.changed.outputs.files }}
+    steps:
+      - name: Checkout Nuclearizer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for git diff
+
+      - name: Detect changed source files
+        id: changed
+        run: |
+          set -euo pipefail
+
+          # github.event.before is only populated on push events;
+          # fall back to the PR base SHA for pull_request events.
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ]; then
+            BEFORE="${{ github.event.pull_request.base.sha }}"
+          fi
+
+          if [ -z "$BEFORE" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "Could not determine base commit — assuming all files changed"
+            echo "any=unknown" >> "$GITHUB_OUTPUT"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Comparing ${BEFORE} to ${{ github.sha }}"
+          CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}" \
+            -- src include apps Makefile 2>/dev/null || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "No source files changed"
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "files=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed files:"
+            echo "$CHANGED"
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            # Newlines are not allowed in job outputs; use space as delimiter.
+            echo "files=$(echo "$CHANGED" | tr '\n' ' ' | sed 's/ $//')" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build job ────────────────────────────────────────────────────────────────
   build:
     name: Ubuntu
+    needs: prepare
     runs-on: ubuntu-latest
     env:
       MEGALIB: ${{ github.workspace }}/megalib
@@ -53,7 +110,7 @@ jobs:
       - name: Checkout Nuclearizer
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed for git diff on partial cache hits
+          fetch-depth: 0
 
       - name: Checkout MEGAlib
         uses: actions/checkout@v4
@@ -93,16 +150,17 @@ jobs:
 
       # ── Nuclearizer overlay cache (changes often, ~few MB) ───────────────────
       #
-      # All nuclearizer outputs land inside $MEGALIB/lib and $MEGALIB/bin, which
-      # are already covered by the MEGAlib cache above. We stage only the
-      # nuclearizer-specific files (identified via -newer $NUCLEARIZER/Makefile)
-      # into .nuclearizer-cache/ under a separate key.
+      # All Nuclearizer outputs land inside $MEGALIB/lib and $MEGALIB/bin, which
+      # are already covered by the MEGAlib cache above.  We stage only the
+      # Nuclearizer-specific files into .nuclearizer-cache/ under a separate key.
       #
-      # Three scenarios:
+      # Three scenarios handled here:
       #   Exact hit   – sources unchanged: restore + touch, make does nothing
-      #   Partial hit – sources changed:   restore + touch + delete stale .o/.d,
-      #                                    make rebuilds only changed files
-      #   Cold cache  – first run:         skip restore, full build, save cache
+      #   Partial hit – some sources changed: restore + touch all artifacts,
+      #                 then use .d dependency files to find and delete only the
+      #                 .o/.d pairs that depend on changed files, make rebuilds
+      #                 only those
+      #   Cold cache  – first run: skip restore, full build, save cache
       #
       - name: Restore Nuclearizer cache
         id: cache-nuclearizer
@@ -119,48 +177,67 @@ jobs:
           cp -a "$NUCLEARIZER_CACHE_DIR/lib/." "$MEGALIB/lib/"
           cp -a "$NUCLEARIZER_CACHE_DIR/bin/." "$MEGALIB/bin/"
 
-          # Touch every file we just copied, driven by the cache dir contents
-          # (not a -newer filter) so nothing is missed regardless of timestamps.
-          # Without this, make sees freshly checked-out src/*.cxx as newer than
-          # the restored .d files and regenerates all dependencies from scratch.
-          find "${{ github.workspace }}/.nuclearizer-cache/lib" -maxdepth 1 -type f -print0 | while read -r -d '' f; do
-            touch "${{ github.workspace }}/megalib/lib/$(basename "$f")" 2>/dev/null || true
-          done
-          touch "${{ github.workspace }}/megalib/bin/nuclearizer" 2>/dev/null || true
+          # Touch every restored artifact to give it a timestamp that is newer
+          # than the freshly checked-out source files.  Without this, make sees
+          # the sources as newer than the cached .o/.d files and recompiles
+          # everything even when nothing has changed.
+          while IFS= read -r -d '' f; do
+            touch "$MEGALIB/lib/$(basename "$f")" 2>/dev/null || true
+          done < <(find "$NUCLEARIZER_CACHE_DIR/lib" -maxdepth 1 -type f -print0)
+          touch "$MEGALIB/bin/nuclearizer" 2>/dev/null || true
 
-          # Partial hit: some sources changed since the cache was built.
-          # Delete the .o/.d for changed files so make rebuilds only those.
-          if [ "${{ steps.cache-nuclearizer.outputs.cache-hit }}" != "true" ]; then
-            echo "Partial cache hit — removing stale artifacts for changed files"
+          # ── Partial-hit invalidation ────────────────────────────────────────
+          #
+          # An exact hit means the cache key matched the current source hash, so
+          # all artifacts are already correct — nothing to do.
+          #
+          # A partial hit means we found a cache from a previous build but the
+          # sources have changed since then.  We use the .d (dependency) files
+          # produced by the compiler to discover which .o files depend on each
+          # changed source or header, then delete only those .o/.d pairs.  This
+          # correctly handles header fan-out: a single changed .h can invalidate
+          # many .o files.
+          #
+          if [ "${{ steps.cache-nuclearizer.outputs.cache-hit }}" = "true" ]; then
+            echo "Exact cache hit — all artifacts are valid"
+          else
+            echo "Partial cache hit — invalidating artifacts for changed files"
 
-            # github.event.before is only set on push; use PR base SHA as fallback
-            BEFORE="${{ github.event.before }}"
-            if [ -z "$BEFORE" ]; then
-              BEFORE="${{ github.event.pull_request.base.sha }}"
-            fi
+            ANY_CHANGED="${{ needs.prepare.outputs.any-changed }}"
+            CHANGED_FILES="${{ needs.prepare.outputs.changed-files }}"
 
-            CHANGED=$(git diff --name-only \
-              "$BEFORE" "${{ github.sha }}" \
-              -- 'src/*.cxx' 'include/*.h' 'apps/**' 'Makefile' 2>/dev/null || true)
-
-            if [ -z "$CHANGED" ]; then
-              echo "Could not determine changed files — keeping all cached artifacts"
+            if [ "$ANY_CHANGED" = "unknown" ] || [ -z "$ANY_CHANGED" ]; then
+              # Could not determine base commit; rebuild everything to be safe.
+              echo "Base commit unknown — removing all cached artifacts"
+              rm -f "$MEGALIB/lib"/*.o "$MEGALIB/lib"/*.d
+              rm -f "$MEGALIB/lib"/libNuclearizer.*
+              rm -f "$MEGALIB/bin/nuclearizer"
+            elif [ "$ANY_CHANGED" = "false" ] || [ -z "$CHANGED_FILES" ]; then
+              echo "No source files changed — all artifacts are valid"
             else
-              echo "Changed files:"
-              echo "$CHANGED"
-              while IFS= read -r file; do
-                base="${file##*/}"
-                stem="${base%.*}"
-                echo "  Invalidating: $stem.o $stem.d"
-                rm -f "$MEGALIB/lib/$stem.o" "$MEGALIB/lib/$stem.d"
-              done <<< "$CHANGED"
+              echo "Changed files: $CHANGED_FILES"
 
-              # Force relink of shared lib and binary
+              # Collect all .d files once to avoid a separate find per changed
+              # file.  For each changed source or header, grep through the list
+              # to find every object file that depends on it and delete both the
+              # .d and .o so make is forced to recompile exactly those units.
+              mapfile -t D_FILES < <(find "$MEGALIB/lib" -maxdepth 1 -name "*.d" -print)
+              for changed_file in $CHANGED_FILES; do
+                changed_basename=$(basename "$changed_file")
+                for d_file in "${D_FILES[@]+"${D_FILES[@]}"}"; do
+                  if grep -qF "$changed_basename" "$d_file" 2>/dev/null; then
+                    o_file="${d_file%.d}.o"
+                    echo "  Invalidating: $(basename "$o_file") (depends on $changed_basename)"
+                    rm -f "$d_file" "$o_file"
+                  fi
+                done
+              done
+
+              # Force relink of the shared library and binary so that any
+              # updated symbols are picked up even if nothing else changed.
               rm -f "$MEGALIB/lib"/libNuclearizer.*
               rm -f "$MEGALIB/bin/nuclearizer"
             fi
-          else
-            echo "Exact cache hit — all artifacts are valid"
           fi
 
       - name: Configure build environment
@@ -183,21 +260,25 @@ jobs:
       - name: Build Nuclearizer
         shell: micromamba-shell {0}
         run: |
-          # Sentinel created inside the same shell as make, guaranteed same env
+          # Sentinel created inside the same shell as make, guaranteed same env.
           touch "${{ github.workspace }}/.build-start"
           cd "${{ github.workspace }}"
           make -j"$(nproc)"
+          ccache -s || true
 
       - name: Stage Nuclearizer outputs for caching
         run: |
           set -euo pipefail
-          # Use github.workspace directly — no env var expansion needed
           CACHE="${{ github.workspace }}/.nuclearizer-cache"
           LB="${{ github.workspace }}/megalib/lib"
           BN="${{ github.workspace }}/megalib/bin"
           SENTINEL="${{ github.workspace }}/.build-start"
           mkdir -p "$CACHE/lib" "$CACHE/bin"
 
+          # Copy .o/.d files produced in this build run on top of whatever the
+          # cache already contains from a previous partial or exact hit.  Using
+          # -newer ensures we only pick up files that make actually (re)built,
+          # leaving unchanged artifacts from the restored cache untouched.
           find "$LB" -maxdepth 1 \( -name '*.o' -o -name '*.d' \) \
             -newer "$SENTINEL" \
             -exec cp -a {} "$CACHE/lib/" \;
