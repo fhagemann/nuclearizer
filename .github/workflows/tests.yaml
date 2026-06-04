@@ -19,14 +19,14 @@ jobs:
       MEGALIB: ${{ github.workspace }}/megalib
       NUCLEARIZER: ${{ github.workspace }}
 
-      # CCACHE_DIR: ${{ github.workspace }}/.ccache
-      # CCACHE_COMPRESS: "true"
-      # CCACHE_COMPRESSLEVEL: "6"
-      # CCACHE_COMPILERCHECK: content
-      # CCACHE_NOHASHDIR: "true"
-      # CCACHE_BASEDIR: ${{ github.workspace }}
-      # CCACHE_MAXSIZE: 4G
-      # CCACHE_SLOPPINESS: file_macro,time_macros,pch_defines
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_COMPRESS: true
+      CCACHE_COMPRESSLEVEL: 6
+      CCACHE_COMPILERCHECK: content
+      CCACHE_NOHASHDIR: true
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 5G
+      CCACHE_SLOPPINESS: file_macro,time_macros,pch_defines
 
     steps:
       - name: Checkout Nuclearizer
@@ -63,47 +63,26 @@ jobs:
           pkg-config --print-errors --exists hdf5
           pkg-config --print-errors --exists CCfits
 
-      # - name: Set branch slug
-      #   id: slug
-      #   run: |
-      #     REF="${{ github.head_ref != '' && github.head_ref || github.ref_name }}"
-      #     echo "branch=${REF//\//-}" >> "$GITHUB_OUTPUT"
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-
+            ccache-${{ runner.os }}-develop-em-
+            ccache-${{ runner.os }}-
 
-      # - name: Restore ccache
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: ${{ env.CCACHE_DIR }}
-      #     key: ccache-${{ runner.os }}-${{ steps.slug.outputs.branch }}-${{ github.run_id }}
-      #     restore-keys: |
-      #       ccache-${{ runner.os }}-${{ steps.slug.outputs.branch }}-
-      #       ccache-${{ runner.os }}-develop-em-
-      #       ccache-${{ runner.os }}-
-
-      # - name: Cache MEGAlib build
-      #   id: cache-megalib
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ${{ github.workspace }}/megalib/lib
-      #       ${{ github.workspace }}/megalib/bin
-      #       ${{ github.workspace }}/megalib/include
-      #       ${{ github.workspace }}/megalib/config
-      #     key: megalib-${{ runner.os }}-root6.32-geant4.11.2-cfitsio4.3-hdf5.1.14-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
-      #     restore-keys: |
-      #       megalib-${{ runner.os }}-root6.32-geant4.11.2-cfitsio4.3-hdf5.1.14-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
-
-      # - name: Restore Nuclearizer build cache
-      #   id: cache-nuclearizer
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ${{ github.workspace }}/lib
-      #       ${{ github.workspace }}/bin
-      #     key: nuclearizer-${{ runner.os }}-${{ steps.slug.outputs.branch }}-root6.32-geant4.11.2-cfitsio4.3-${{ hashFiles('src/**', 'Makefile*', 'include/**') }}
-      #     restore-keys: |
-      #       nuclearizer-${{ runner.os }}-${{ steps.slug.outputs.branch }}-root6.32-geant4.11.2-cfitsio4.3-
-      #       nuclearizer-${{ runner.os }}-develop-em-root6.32-geant4.11.2-cfitsio4.3-
-      #       nuclearizer-${{ runner.os }}-
+      - name: Cache MEGAlib build
+        id: cache-megalib
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/megalib/lib
+            ${{ github.workspace }}/megalib/bin
+            ${{ github.workspace }}/megalib/include
+            ${{ github.workspace }}/megalib/config
+          key: megalib-${{ runner.os }}-root6.32-geant4.11.2-cfitsio4.3-hdf5.1.14-${{ hashFiles('megalib/src/**', 'megalib/configure') }}
 
       - name: Configure build environment
         shell: micromamba-shell {0}
@@ -116,10 +95,9 @@ jobs:
             echo "CXX=ccache g++"
             echo "CC=ccache gcc"
           } >> "$GITHUB_ENV"
-        # ccache --show-config
 
       - name: Build MEGAlib
-        # if: steps.cache-megalib.outputs.cache-hit != 'true'
+        if: steps.cache-megalib.outputs.cache-hit != 'true'
         shell: micromamba-shell {0}
         run: |
           set -euo pipefail
@@ -128,14 +106,13 @@ jobs:
           make -j2
 
       - name: Build Nuclearizer
-        # if: steps.cache-nuclearizer.outputs.cache-hit != 'true'
         shell: micromamba-shell {0}
         run: |
           set -euo pipefail
           mkdir -p ${{ github.workspace }}/lib ${{ github.workspace }}/bin
           ln -sf $MEGALIB/bin/generatelinkdef ${{ github.workspace }}/bin/generatelinkdef
           cd ${{ github.workspace }}
-          make LB=${{ github.workspace }}/lib BN=${{ github.workspace }}/bin -j2
+          make CXX="ccache g++" CC="ccache gcc" LB=${{ github.workspace }}/lib BN=${{ github.workspace }}/bin -j2
 
       - name: Symlink to MEGAlib
         shell: micromamba-shell {0}
@@ -152,13 +129,13 @@ jobs:
           set -euo pipefail
           cd $NUCLEARIZER
           export PATH=$MEGALIB/bin:$PATH
-          make unittests LB=${{ github.workspace }}/lib BN=${{ github.workspace }}/bin -j2
+          make unittests CXX="ccache g++" CC="ccache gcc" LB=${{ github.workspace }}/lib BN=${{ github.workspace }}/bin -j2
           ${{ github.workspace }}/bin/UTNRunner
 
-      # - name: ccache stats
-      #   if: always()
-      #   shell: micromamba-shell {0}
-      #   run: ccache --show-stats || true
+      - name: ccache stats
+        if: always()
+        shell: micromamba-shell {0}
+        run: ccache --show-stats || true
 
       - name: Upload Logs on Failure
         if: failure()
