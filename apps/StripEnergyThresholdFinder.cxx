@@ -133,6 +133,7 @@ int main(int argc,char** argv)
    
   //TH1::AddDirectory(false);
   MGlobal::Initialize("Standalone","ThresholdFinder");
+  g_Verbosity = c_Error;
 
   if(argc<2)
   {
@@ -189,8 +190,8 @@ int main(int argc,char** argv)
   vector<string> inputFiles=config["input"]["data_files"].as<vector<string>>();
   
   if (inputFiles.empty()) {
-    cerr << "Error: No input files provided." << endl;
-    return 1;
+    cout << "Error: No input files provided." << endl;
+    return -1;
   }
   
   string EnergyCalibrationFileName = config["input"]["calibration_file"].as<string>();
@@ -200,6 +201,7 @@ int main(int argc,char** argv)
 
   MModuleEnergyCalibration EnergyCalibration;
   if (EnergyCalibration.ReadEnergyCalibrationFile(EnergyCalibrationFileName) == false) {
+    cout << "Could not open energy calibration file" << endl;
     return -1;
   }
   
@@ -377,18 +379,20 @@ int main(int argc,char** argv)
   /* Build ADC histograms from data                                */
   /* ------------------------------------------------------------- */
 
-  for(string inputFile:inputFiles)
-  {
-
-    MModuleLoaderMeasurementsHDF* Loader=new MModuleLoaderMeasurementsHDF();
+  for(string inputFile : inputFiles) {
+    
+    MModuleLoaderMeasurementsHDF* Loader = new MModuleLoaderMeasurementsHDF();
     Loader->SetFileName(inputFile.c_str());
     Loader->SetFileNameStripMap(stripMapFile);
 
     S->SetModule(Loader,0);
 
-    if(!Loader->Initialize()) return -1;
+    if(Loader->Initialize() == false) {
+      cout << "Could not open HDF5 file " << inputFile << endl;
+      return -1;
+    } 
 
-    MReadOutAssembly* Event=new MReadOutAssembly();
+    MReadOutAssembly* Event = new MReadOutAssembly();
     
 	  long event_counter = 0;
     while(Loader->IsFinished()==false)
