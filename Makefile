@@ -60,17 +60,25 @@ else
 $(error "Unable to find CCfits headers and libraries")
 endif
 
+YAMLCXXFLAGS = 
+YAMLLIBS =
+ifeq ("$(shell pkg-config --exists yaml-cpp 1>&2 2> /dev/null; echo $$?)", "0")
+YAMLCXXFLAGS += $(shell pkg-config --cflags yaml-cpp)
+CCFITSLIBS += $(shell pkg-config --libs yaml-cpp)
+else
+$(error "Unable to find YAML headers and libraries")
+endif
 
 #----------------------------------------------------------------
 # Definitions based on architecture and user options
 #
 
 CMD=""
-CXXFLAGS += -I$(IN) -I$(MEGALIB)/include -I/opt/local/include $(H5CXXFLAGS) $(CCFITSCXXFLAGS)
+CXXFLAGS += -I$(IN) -I$(MEGALIB)/include -I/opt/local/include $(H5CXXFLAGS) $(CCFITSCXXFLAGS) $(YAMLCXXFLAGS)
 # Comment this line out if you want to accept warnings
 #CXXFLAGS += -Werror -Wno-unused-variable
 
-LIBS += $(H5LIBS) $(CCFITSLIBS)
+LIBS += $(H5LIBS) $(CCFITSLIBS) $(YAMLLIBS)
 
 # Fretalon core:
 FRETALON_DIR          := $(MEGALIB)/src/fretalon/framework
