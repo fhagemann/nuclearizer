@@ -3,7 +3,6 @@ input:
     - /path/to/data/file.hdf5
 
   calibration_file: /path/to/calibration/file.ecal
-  tac_calibration_file: /path/to/tac/calibration/file.csv
   strip_map: /path/to/strip/map/file.map
 
 analysis:

@@ -72,67 +72,6 @@ using namespace std;
 #include "MString.h"
 
 
-
-/* ------------------------------------------------------------- */
-/* TAC calibration helper                                        */
-/* ------------------------------------------------------------- */
-
-class TACCalHelper
-{
-public:
-
-  struct Coeff
-  {
-    double slope = 0;
-    double offset = 0;
-  };
-
-  bool Load(const string& fileName)
-  {
-    ifstream in(fileName);
-    if(!in)
-    {
-      cout<<"Failed to open TAC calibration file: "<<fileName<<endl;
-      return false;
-    }
-
-    string line;
-    getline(in,line); // skip header
-
-    while(getline(in,line))
-    {
-      if(line.empty()) continue;
-
-      stringstream ss(line);
-
-      int STRIP_ID, DetID, Side, StripID;
-      double slope, slope_err, offset, offset_err;
-
-      ss >> STRIP_ID >> DetID >> Side >> StripID
-         >> slope >> slope_err >> offset >> offset_err;
-
-      MReadOutElementDoubleStrip R;
-      R.SetDetectorID(DetID);
-      R.SetStripID(StripID);
-      R.IsLowVoltageStrip(Side);
-
-      m_Coeffs[R] = {slope, offset};
-    }
-
-    return true;
-  }
-
-  double TACToEnergy(MReadOutElementDoubleStrip R, double tac)
-  {
-    Coeff c = m_Coeffs[R];
-    return c.slope * tac + c.offset;
-  }
-
-private:
-  map<MReadOutElementDoubleStrip, Coeff> m_Coeffs;
-};
-
-
 /* ------------------------------------------------------------- */
 /* Hit selection                                                 */
 /* ------------------------------------------------------------- */
@@ -260,14 +199,9 @@ int main(int argc,char** argv)
 
 
   MModuleEnergyCalibration EnergyCalibration;
-  TACCalHelper helperCal_TAC;
-  
   if (EnergyCalibration.ReadEnergyCalibrationFile(EnergyCalibrationFileName) == false) {
     return -1;
   }
-  
-  string tacCalibrationFile = config["input"]["tac_calibration_file"].as<string>();
-
   
   
   /* ------------------------------------------------------------- */
