@@ -64,6 +64,7 @@ using namespace std;
 /* MEGAlib */
 #include "MGlobal.h"
 #include "MSupervisor.h"
+#include "MModuleEnergyCalibration.h"
 #include "MModuleLoaderMeasurementsHDF.h"
 #include "MReadOutAssembly.h"
 #include "MReadOutElementDoubleStrip.h"
@@ -71,97 +72,6 @@ using namespace std;
 #include "MString.h"
 
 
-/* -------------------------------------------------------------   */
-/* Simple calibration helper                                       */
-/* Converts ADC → Energy using polynomial calibration coefficients */
-/* -------------------------------------------------------------   */
-
-class EnergyCalHelper
-{
-public:
-
-  struct Coeff
-  {
-    double c0=0;
-    double c1=0;
-    double c2=0;
-    double c3=0;
-  };
-
-  bool Load(const string& fileName,int nDet=64,int nStrip=65)
-  {
-    m_NDet=nDet;
-    m_NStrip=nStrip;
-
-    m_Coeffs.clear();
-
-    ifstream in(fileName);
-
-    if(!in)
-    {
-      cout<<"Unable to open calibration file "<<fileName<<endl;
-      return false;
-    }
-
-    string line;
-
-    while(getline(in,line))
-    {
-      if(line.empty()) continue;
-
-      stringstream ss(line);
-
-      string tag;
-      ss>>tag;
-
-      if(tag!="CM") continue;
-
-      string unused;
-      int det=-1;
-      int strip=-1;
-      string side;
-      string order;
-
-      ss>>unused>>det>>strip>>side>>order;
-
-      if(det < 0 || det >= m_NDet) continue;
-      if(strip < 0 || strip >= m_NStrip) continue;
-
-      MReadOutElementDoubleStrip R;
-      R.SetDetectorID(det);
-      R.SetStripID(strip);
-      R.IsLowVoltageStrip(side=="l");
-
-      Coeff c;
-
-      if(order=="poly1zero")
-        ss>>c.c1;
-      else if(order=="poly1")
-        ss>>c.c0>>c.c1;
-      else if(order=="poly2")
-        ss>>c.c0>>c.c1>>c.c2;
-      else
-        ss>>c.c0>>c.c1>>c.c2>>c.c3;
-
-      m_Coeffs[R]=c;
-    }
-
-    return true;
-  }
-
-  double ADCToEnergy(MReadOutElementDoubleStrip R, double adc)
-  {
-    const Coeff& c = m_Coeffs[R];
-    return c.c3*pow(adc,3)+c.c2*pow(adc,2)+c.c1*adc+c.c0;
-  }
-
-private:
-
-  int m_NDet;
-  int m_NStrip;
-
-  map<MReadOutElementDoubleStrip,Coeff> m_Coeffs;
-};
 
 /* ------------------------------------------------------------- */
 /* TAC calibration helper                                        */
@@ -264,7 +174,7 @@ int main(int argc,char** argv)
       cout<<"  ./StripEnergyThresholdFinder config.yaml [options]"<<endl;
       cout<<endl;
       cout<<"Options:"<<endl;
-	  cout<<"Input/Output overrides:"<<endl;
+	    cout<<"Input/Output overrides:"<<endl;
       cout<<"  --data_file FILE            Add data file (can be used multiple times)"<<endl;
       cout<<"  --calibration_file FILE"<<endl;
       cout<<"  --strip_map FILE"<<endl;
@@ -344,17 +254,15 @@ int main(int argc,char** argv)
     return 1;
   }
   
-  string calibrationFile=config["input"]["calibration_file"].as<string>();
+  string EnergyCalibrationFileName = config["input"]["calibration_file"].as<string>();
   string stripMapFileStr=config["input"]["strip_map"].as<string>();
   string outfile=config["output"]["prefix"].as<string>();
 
 
-  EnergyCalHelper helperCal;
+  MModuleEnergyCalibration EnergyCalibration;
   TACCalHelper helperCal_TAC;
   
-  if(!helperCal.Load(calibrationFile))
-  {
-    cout<<"Failed to load calibration file: "<<calibrationFile<<endl;
+  if (EnergyCalibration.ReadEnergyCalibrationFile(EnergyCalibrationFileName) == false) {
     return -1;
   }
   
@@ -456,7 +364,7 @@ int main(int argc,char** argv)
 
   if(cmd_calibration_file != "")
   {
-    calibrationFile = cmd_calibration_file;
+    EnergyCalibrationFileName = cmd_calibration_file;
   }
 
   if(cmd_strip_map != "")
@@ -513,7 +421,7 @@ int main(int argc,char** argv)
   /* ------------------------------------------------------------- */
   
   cout<<endl;
-  cout<<"  calibration_file:        "<<calibrationFile<<endl;
+  cout<<"  calibration_file:        "<<EnergyCalibrationFileName<<endl;
   cout<<"  strip_map:               "<<stripMapFileStr<<endl;
   cout<<"  output_prefix:           "<<outfile<<endl;
 
@@ -794,7 +702,7 @@ int main(int argc,char** argv)
     double thresholdADC = hist->GetBinCenter(thresholdBin);
 
     /* Convert ADC → keV using SLOW calibration */
-    double thresholdKeV = helperCal.ADCToEnergy(R,thresholdADC);
+    double thresholdKeV = EnergyCalibration.GetEnergy(R,thresholdADC);
 
     /* Store SLOW thresholds */
     thresholds[R] = thresholdKeV;
@@ -978,7 +886,7 @@ int main(int argc,char** argv)
     thresholds_TAC_ADC[R] = fast_thresh_adc;
 
     double fast_thresh_keV =
-      helperCal.ADCToEnergy(R,fast_thresh_adc);
+      EnergyCalibration.GetEnergy(R,fast_thresh_adc);
 
     thresholds_TAC[R] = fast_thresh_keV;
 
@@ -1419,13 +1327,13 @@ int main(int argc,char** argv)
         name.c_str(),
         adcHist->GetNbinsX(),
         0,
-        helperCal.ADCToEnergy(R, histogramMaxADC)
+        EnergyCalibration.GetEnergy(R, histogramMaxADC)
     );
 
     for(int b=1;b<=adcHist->GetNbinsX();b++)
     {
       double adc=adcHist->GetBinCenter(b);
-      double energy=helperCal.ADCToEnergy(R, adc);
+      double energy=EnergyCalibration.GetEnergy(R, adc);
       double counts=adcHist->GetBinContent(b);
 
       int ebin=energyHist->FindBin(energy);
@@ -1664,8 +1572,8 @@ int main(int argc,char** argv)
       int n0  = a.second.first;
       int n1  = a.second.second;
 	  
-      double e0 = helperCal.ADCToEnergy(R, adc);
-      double e1 = helperCal.ADCToEnergy(R, adc + 1);
+      double e0 = EnergyCalibration.GetEnergy(R, adc);
+      double e1 = EnergyCalibration.GetEnergy(R, adc + 1);
 
       // distribute counts across the interval
       int nSub = 5;  // small subdivision
@@ -1686,7 +1594,7 @@ int main(int argc,char** argv)
     if(thresholds_TAC_ADC.find(R) != thresholds_TAC_ADC.end())
     {
       double thr_adc = thresholds_TAC_ADC[R];
-      double thr_keV = helperCal.ADCToEnergy(R, thr_adc);
+      double thr_keV = EnergyCalibration.GetEnergy(R, thr_adc);
 	  
       double maxY = max(h0->GetMaximum(), h1->GetMaximum());
 
