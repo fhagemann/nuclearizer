@@ -161,6 +161,7 @@ jobs:
           set -euo pipefail
           gcovr -r . $MEGALIB/lib/ $MEGALIB/bin/ \
             --xml coverage.xml \
+            --merge-mode-functions separate \
             --exclude '$NUCLEARIZER/apps/.*' \
             --exclude '$NUCLEARIZER/unittests/.*' \
             --exclude-throw-branches --exclude-unreachable-branches \
