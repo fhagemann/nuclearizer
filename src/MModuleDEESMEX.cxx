@@ -76,7 +76,7 @@ MModuleDEESMEX::MModuleDEESMEX() : MModule()
   AddSucceedingModuleType(MAssembly::c_NoRestriction);
   
   m_HasOptionsGUI = true;
-  
+
   // Default to adding noise to the simulated energies
   m_ApplyResolutionCalibration = true;
   m_EnableShieldVeto = true;
@@ -84,6 +84,7 @@ MModuleDEESMEX::MModuleDEESMEX() : MModule()
 
   // Default to adding noise to the simulated timing values
   m_ApplyTimingResolutionCalibration = true;
+
 }
 
 
@@ -132,6 +133,7 @@ bool MModuleDEESMEX::Initialize()
   if (m_StripTrigger.Initialize() == false) return false;
   if (m_DepthReadout.Initialize() == false) return false;
   if (m_Output.Initialize() == false) return false;
+  if (m_ChargeLoss.Initialize() == false) return false;
 
   return MModule::Initialize();
 }
@@ -210,6 +212,10 @@ bool MModuleDEESMEX::AnalyzeEvent(MReadOutAssembly* Event)
   m_StripReadout.Clear();
   m_StripReadout.AnalyzeEvent(Event);
   
+  // Step (8b): Charge loss between adjacent same-side strips (before noise/ADC)
+  m_ChargeLoss.Clear ();
+  m_ChargeLoss.AnalyzeEvent (Event);
+  
   // Step (9): Simulate micro-phonics random noise
   m_StripReadoutNoise.Clear();
   m_StripReadoutNoise.AnalyzeEvent(Event);
@@ -260,6 +266,7 @@ void MModuleDEESMEX::Finalize()
   m_StripTrigger.Finalize();
   m_DepthReadout.Finalize();
   m_Output.Finalize();
+  m_ChargeLoss.Finalize();
 
   MModule::Finalize();
 }
@@ -296,7 +303,8 @@ bool MModuleDEESMEX::ReadXmlConfiguration(MXmlNode* Node)
   m_StripTrigger.ReadXmlConfiguration(Node);
   m_DepthReadout.ReadXmlConfiguration(Node);
   m_Output.ReadXmlConfiguration(Node);
-
+  m_ChargeLoss.ReadXmlConfiguration(Node);
+  
   // Add depth-calibration-related file names (used by several submodules)
   MXmlNode* DepthSplineFile = Node->GetNode("DepthSplineFileName");
   if (DepthSplineFile != nullptr) {
@@ -350,6 +358,7 @@ MXmlNode* MModuleDEESMEX::CreateXmlConfiguration()
   m_StripTrigger.CreateXmlConfiguration(Node);
   m_DepthReadout.CreateXmlConfiguration(Node);
   m_Output.CreateXmlConfiguration(Node);
+  m_ChargeLoss.CreateXmlConfiguration(Node);
   
   // Add depth-calibration-related file names (used by several submodules)
   new MXmlNode(Node, "DepthSplineFileName", m_DepthSplinesFileName);

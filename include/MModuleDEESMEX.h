@@ -36,6 +36,8 @@
 #include "MSubModuleStripTrigger.h"
 #include "MSubModuleDepthReadout.h"
 #include "MSubModuleDEEOutput.h"
+#include "MSubModuleChargeLoss.h"
+
 
 // Forward declarations:
 
@@ -136,6 +138,17 @@ class MModuleDEESMEX : public MModule
   {
     return m_ShieldEnergyCorrection.GetShieldEnergyCorrectionFileName();
   }
+  
+  //! Set charge loss file name
+  void SetChargeLossFileName(const MString& FileName)
+  {
+    m_ChargeLoss.SetChargeLossFileName(FileName);
+  }
+  //! Get charge loss file name
+  MString GetChargeLossFileName() const
+  {
+    return m_ChargeLoss.GetChargeLossFileName();
+  }
 
   //! Set dead time file name
   void SetDeadtimeFileName(const MString& FileName)
@@ -198,6 +211,9 @@ class MModuleDEESMEX : public MModule
 
   //! The sub module handling the strip readout: energy -> ADCs and thresholds
   MSubModuleStripReadout m_StripReadout;
+  
+  //! The sub module handling charge loss between adjacent same-side strips
+    MSubModuleChargeLoss m_ChargeLoss;
 
   //! The sub module handling the strip readout noise on non-triggered strips
   MSubModuleStripReadoutNoise m_StripReadoutNoise;
