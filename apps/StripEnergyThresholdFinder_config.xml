@@ -2,15 +2,14 @@
 <StripEnergyThresholdFinder>
   <Input>
     <DataFiles>
-      <DataFile>/path/to/your/data/file0.hdf5</DataFile>
-      <DataFile>/path/to/your/data/file1.hdf5</DataFile>
+      <DataFile>/home/hagemann/Downloads/gse_20260217T115220.hdf5</DataFile>
     </DataFiles>
-    <CalibrationFile>/path/to/calibration/file.ecal</CalibrationFile>
-    <StripMap>/path/to/stripmap.map</StripMap>
+    <CalibrationFile>/home/hagemann/Software/COSItools/nuclearizer/resource/unittestdata/406-1/hp52406-1.full.ecal</CalibrationFile>
+    <StripMap>/home/hagemann/Software/COSItools/nuclearizer/resource/unittestdata/406-1/hp52406-1.stripmap.map</StripMap>
   </Input>
 
   <Output>
-    <Prefix>your_output_file_prefix</Prefix>
+    <Prefix>output_file_prefix</Prefix>
   </Output>
 
   <Analysis>
