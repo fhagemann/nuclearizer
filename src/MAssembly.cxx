@@ -55,12 +55,15 @@ using namespace std;
 #include "MFretalonRegistry.h"
 #include "MReadOutDataTAC.h"
 #include "MReadOutDataEnergy.h"
+#include "MReadOutDataFlags.h"
+#include "MReadOutElementVoxel3D.h"
 #include "MReadOutAssembly.h"
 #include "MModule.h"
 #include "MGUIExpoCombinedViewer.h"
 #include "MModuleTransmitterRealta.h"
 #include "MModuleLoaderSimulationsCosima.h"
 #include "MModuleLoaderMeasurementsROA.h"
+#include "MModuleLoaderMeasurementsTRA.h"
 #include "MModuleLoaderMeasurementsHDF.h"
 #include "MModuleLoaderMeasurementsFITS.h"
 #include "MModuleLoaderMeasurementsL0.h"
@@ -109,6 +112,13 @@ MAssembly::MAssembly()
   MReadOutDataEnergy Energy;
   MFretalonRegistry::Instance().Register(Energy);
 
+  MReadOutDataFlags Flags;
+  MFretalonRegistry::Instance().Register(Flags);
+
+  //! Register new read-out elements:
+  MReadOutElementVoxel3D Voxel3D;
+  MFretalonRegistry::Instance().Register(Voxel3D);
+
   // Create the supervisor
   m_Supervisor = MSupervisor::GetSupervisor();
   
@@ -123,6 +133,7 @@ MAssembly::MAssembly()
   
   m_Supervisor->AddAvailableModule(new MModuleLoaderSimulationsCosima());
   m_Supervisor->AddAvailableModule(new MModuleLoaderMeasurementsROA());
+  m_Supervisor->AddAvailableModule(new MModuleLoaderMeasurementsTRA());
   m_Supervisor->AddAvailableModule(new MModuleLoaderMeasurementsHDF());
   m_Supervisor->AddAvailableModule(new MModuleLoaderMeasurementsFITS());
   m_Supervisor->AddAvailableModule(new MModuleLoaderMeasurementsL0());
