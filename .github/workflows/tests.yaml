@@ -57,7 +57,7 @@ jobs:
           create-args: >-
             python=3.13 root=6.40 geant4 healpix_cxx
             pkg-config make cmake cxx-compiler ccache
-            ccfits cfitsio=4.6.4 hdf5=1.14 gcovr
+            ccfits=2.5 cfitsio=4.6.4 hdf5=1.14 gcovr
           cache-environment: true
           cache-environment-key: micromamba-${{ runner.os }}-root6.40-geant4.11.2-ccfits2.6-cfitsio4.6.4-hdf5.1.14
 
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$CONDA_PREFIX/lib/pkgconfig"
           echo -e "prefix=$CONDA_PREFIX\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: hdf5\nDescription: HDF5\nVersion: 1.14\nLibs: -L\${libdir} -lhdf5_cpp -lhdf5\nCflags: -I\${includedir}" > "$CONDA_PREFIX/lib/pkgconfig/hdf5.pc"
-          echo -e "prefix=$CONDA_PREFIX\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: CCfits\nDescription: CCfits\nVersion: 2.6\nLibs: -L\${libdir} -lCCfits -lcfitsio\nCflags: -I\${includedir}" > "$CONDA_PREFIX/lib/pkgconfig/CCfits.pc"
+          echo -e "prefix=$CONDA_PREFIX\nexec_prefix=\${prefix}\nlibdir=\${exec_prefix}/lib\nincludedir=\${prefix}/include\n\nName: CCfits\nDescription: CCfits\nVersion: 2.5\nLibs: -L\${libdir} -lCCfits -lcfitsio\nCflags: -I\${includedir}" > "$CONDA_PREFIX/lib/pkgconfig/CCfits.pc"
           export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig:${PKG_CONFIG_PATH:-}"
           pkg-config --print-errors --exists hdf5
           pkg-config --print-errors --exists CCfits
