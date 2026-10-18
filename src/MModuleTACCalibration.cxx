@@ -343,6 +343,7 @@ bool MModuleTACCalibration::ApplyTACCal(MReadOutAssembly* Event)
             <<": Error: DetID "<<DetID
             <<" has no TAC calibration entries - skipping event"
             <<endl;
+        cout << "UNKNOWN DETECTOR " << DetID << endl;
         return false;
       }
 
