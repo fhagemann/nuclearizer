@@ -393,10 +393,11 @@ bool MModuleTACCalibration::ApplyTACCal(MReadOutAssembly* Event)
       // Store calibrated timing
       SH->SetTiming(ns_timing); 
     }
-  } else {
-    cout << "TAC calibrating GR" << endl;
-  }
-
+    else {
+      cout << "TAC calibrating GR" << endl;
+    }
+  } 
+  
   // Mark TAC calibration as completed for this event
   Event->SetAnalysisProgress(MAssembly::c_TACCalibration);
 
