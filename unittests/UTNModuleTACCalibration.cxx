@@ -615,6 +615,8 @@ bool UTNModuleTACCalibration::TestAnalyzeEvent()
     FileColumnSH->HasFastTiming(true);
     FileColumn.AddStripHit(FileColumnSH);
 
+    cout << "GetNStripHits: " << FileColumn.GetNStripHits() << endl;
+
     Passed = EvaluateFalse("AnalyzeEvent()", "hit on file-column detector", "AnalyzeEvent() fails for a hit on detector 0, which only exists in the detector column of the TAC calibration file", Module.AnalyzeEvent(&FileColumn)) && Passed;
     Module.Finalize();
   }
