@@ -57,9 +57,9 @@ jobs:
           create-args: >-
             root=6.40 geant4=11.2 healpix_cxx
             pkg-config make cmake cxx-compiler ccache
-            ccfits=2.6 cfitsio=4.3 hdf5=1.14 gcovr
+            ccfits=2.6 cfitsio=4.6.4 hdf5=1.14 gcovr
           cache-environment: true
-          cache-environment-key: micromamba-${{ runner.os }}-root6.40-geant4.11.2-ccfits2.6-cfitsio4.3-hdf5.1.14
+          cache-environment-key: micromamba-${{ runner.os }}-root6.40-geant4.11.2-ccfits2.6-cfitsio4.6.4-hdf5.1.14
 
       - name: Write pkg-config files & sanity-check
         shell: micromamba-shell {0}
