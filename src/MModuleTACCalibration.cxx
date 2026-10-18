@@ -374,6 +374,11 @@ bool MModuleTACCalibration::ApplyTACCal(MReadOutAssembly* Event)
           ", StripID " + to_string(StripID)
         );
 
+        cout<< m_XmlTag
+              <<": Warning: No valid TAC calibration for DETID"<< DetID
+              <<", StripID "<< StripID
+              <<", Side "<< Side << endl;
+
         continue;
       }
 
@@ -388,6 +393,8 @@ bool MModuleTACCalibration::ApplyTACCal(MReadOutAssembly* Event)
       // Store calibrated timing
       SH->SetTiming(ns_timing); 
     }
+  } else {
+    cout << "TAC calibrating GR" << endl;
   }
 
   // Mark TAC calibration as completed for this event
