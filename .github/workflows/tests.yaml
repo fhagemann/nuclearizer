@@ -141,6 +141,7 @@ jobs:
           export PATH=$MEGALIB/bin:$PATH
           find $MEGALIB/bin -name "*.gcda" -delete
           make unittests COVERAGE=1 CXX="ccache g++" CC="ccache gcc" LB=${{ github.workspace }}/lib BN=${{ github.workspace }}/bin -j$(nproc)
+          ${{ github.workspace }}/bin/UTNModuleTACCalibration
           ${{ github.workspace }}/bin/UTNRunner
 
       - name: ccache stats
