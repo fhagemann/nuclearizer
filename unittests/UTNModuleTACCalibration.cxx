@@ -608,7 +608,7 @@ bool UTNModuleTACCalibration::TestAnalyzeEvent()
     // A hit on the detector named in the TAC calibration file's detector column has no calibration
     MReadOutAssembly FileColumn;
     MStripHit* FileColumnSH = new MStripHit();
-    FileColumnSH->SetDetectorID(0);
+    FileColumnSH->SetDetectorID(1);
     FileColumnSH->IsLowVoltageStrip(false);
     FileColumnSH->SetStripID(32);
     FileColumnSH->SetTAC(10000.0);
