@@ -55,7 +55,7 @@ jobs:
             channels:
               - conda-forge
           create-args: >-
-            root=6.40 geant4=11.2 healpix_cxx
+            python=3.13 root=6.40 geant4=11.2 healpix_cxx
             pkg-config make cmake cxx-compiler ccache
             ccfits=2.6 cfitsio=4.6.4 hdf5=1.14 gcovr
           cache-environment: true
