@@ -605,17 +605,16 @@ bool UTNModuleTACCalibration::TestAnalyzeEvent()
     Passed = EvaluateFalse("AnalyzeEvent()", "hit on strip-map channel", "No TAC calibration error is flagged for a hit on detector 3, LV, strip 32", Mapped.HasTACCalibrationError()) && Passed;
     Passed = EvaluateNear("AnalyzeEvent()", "hit on strip-map channel", "The timing is 2000 * 0.45 - 600 = 300 ns", Mapped.GetStripHit(0)->GetTiming(), 300.0, 1e-9) && Passed;
 
-    // A hit on the detector named in the file's detector column has no calibration
+    // A hit on the detector named in the TAC calibration file's detector column has no calibration
     MReadOutAssembly FileColumn;
     MStripHit* FileColumnSH = new MStripHit();
     FileColumnSH->SetDetectorID(0);
     FileColumnSH->IsLowVoltageStrip(false);
     FileColumnSH->SetStripID(32);
-    FileColumnSH->SetTAC(2000.0);
+    FileColumnSH->SetTAC(10000.0);
     FileColumn.AddStripHit(FileColumnSH);
 
-    Passed = EvaluateFalse("AnalyzeEvent()", "hit on file-column detector", "AnalyzeEvent() fails for a hit on detector 0, which only the file's detector column names", Module.AnalyzeEvent(&FileColumn)) && Passed;
-
+    Passed = EvaluateFalse("AnalyzeEvent()", "hit on file-column detector", "AnalyzeEvent() fails for a hit on detector 0, which only exists in the detector column of the TAC calibration file", Module.AnalyzeEvent(&FileColumn)) && Passed;
     Module.Finalize();
   }
 
