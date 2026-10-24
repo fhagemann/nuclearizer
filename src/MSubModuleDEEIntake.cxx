@@ -146,6 +146,8 @@ bool MSubModuleDEEIntake::AnalyzeEvent(MReadOutAssembly* Event)
       DetectorName.RemoveAllInPlace("GeD_"); // The number after GeD is the COSI detector ID
       int DetectorID = DetectorName.ToInt();
 
+      if (DetectorID == 0) continue;
+
       MDEEStripHit LVHit;
       MDEEStripHit HVHit;
 
@@ -199,6 +201,51 @@ bool MSubModuleDEEIntake::AnalyzeEvent(MReadOutAssembly* Event)
       Event->AddDEEStripHitLV(LVHit);
       Event->AddDEEStripHitHV(HVHit);
 
+    } else if (DetectorName.BeginsWith("CsI_") == true) {
+      vector<MString> Tokens = DetectorName.Tokenize("_");
+
+      if (Tokens.size() != 2) {
+        if (g_Verbosity >= c_Error)
+          cout << "ERROR: Unexpected detector name format for the CsI scintillators"
+               << DetectorName << endl;
+        return false;
+      }
+
+      MString DetectorID = Tokens[1];
+      int CrystalID = Tokens[1].ToInt();
+
+      MDGridPoint P = VS->GetGridPoint();
+      MVector Voxel_ID;
+      Voxel_ID[0] = P.GetXGrid();
+      Voxel_ID[1] = P.GetYGrid();
+      Voxel_ID[2] = P.GetZGrid();
+
+      MDEECrystalHit CHit;
+      CHit.m_SimulatedEventID = Event->GetSimulatedEvent()->GetID();
+
+      CHit.m_DetectorID = DetectorID;
+      CHit.m_CrystalID = CrystalID;
+
+      CHit.m_VoxelInDetector = Voxel_ID;
+
+      CHit.m_SimulatedHitIndex = h;
+
+      // Sivan provides a vector and we want a list her (why??)
+      auto HTOrigins = HT->GetOrigins();
+      vector<int> Origins(HTOrigins.begin(), HTOrigins.end());
+      CHit.m_SimulatedOrigins = list<int>(Origins.begin(), Origins.end());
+
+      CHit.m_SimulatedPosition = HT->GetPosition();
+      CHit.m_SimulatedEnergy = HT->GetEnergy();
+
+      CHit.m_ID = 1000 + (2 * h);
+
+      CHit.m_ROE.SetDetectorID(DetectorID);
+
+      // The rest will be filled in later
+
+      Event->AddDEECrystalHit(CHit);
+
     } else if (DetectorName.BeginsWith("ACS_") == true) {
       vector<MString> Tokens = DetectorName.Tokenize("_");
 
@@ -246,7 +293,7 @@ bool MSubModuleDEEIntake::AnalyzeEvent(MReadOutAssembly* Event)
 
     } else {
       if (g_Verbosity >= c_Error)
-        cout << m_Name << ": No GeD_ and no ACS_ volumes found" << endl;
+        cout << m_Name << ": No GeD_, CsI_, or ACS_ volumes found" << endl;
       continue;
     }
   }
