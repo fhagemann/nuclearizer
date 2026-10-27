@@ -4,6 +4,8 @@ comment: false # do not comment PR with the result
 ignore:
   - apps/
   - unittests/
+  - include/MGUI*.h
+  - src/MGUI*.cxx
 
 parsers:
   gcov:
